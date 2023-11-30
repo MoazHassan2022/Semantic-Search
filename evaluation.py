@@ -17,10 +17,13 @@ class Result:
 def run_queries(db, np_rows, top_k, num_runs):
     results = []
     for _ in range(num_runs):
-        query = np.random.random((1,70))
+        # query = np.random.random((1,2))
+        query = np_rows[5]
+
         
         tic = time.time()
-        db_ids = db.retrive(query, top_k)
+        db_ids = db.retrive(query,top_k)
+        print(db_ids)
         toc = time.time()
         run_time = toc - tic
         
@@ -57,12 +60,12 @@ def eval(results: List[Result]):
 
 if __name__ == "__main__":
     # db = VecDBWorst()
-    db = HNSW(5, 5, "saved_db.csv", True)
+    db = HNSW(5, 2, "saved_db.csv", True)
     records_np = np.random.random((10, 2))
     records_dict = [{"id": i, "embed": list(row)} for i, row in enumerate(records_np)]
     _len = len(records_np)
     db.insert_records(records_dict)
-    res = run_queries(db, records_np, 5, 10)
+    res = run_queries(db, records_np, 1, 1)
     print(eval(res))
     
     # records_np = np.concatenate([records_np, np.random.random((90000, 70))])
