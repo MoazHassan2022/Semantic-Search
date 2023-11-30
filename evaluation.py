@@ -57,7 +57,7 @@ def eval(results: List[Result]):
 
 if __name__ == "__main__":
     # db = VecDBWorst()
-    db = HNSW(10, 5, "saved_db.csv", True)
+    db = HNSW(5, 5, "saved_db.csv", True)
     records_np = np.random.random((10, 2))
     records_dict = [{"id": i, "embed": list(row)} for i, row in enumerate(records_np)]
     _len = len(records_np)

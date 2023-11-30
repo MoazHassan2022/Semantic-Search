@@ -45,13 +45,13 @@ class HNSW:
     def connect_nodes(self):
         for i,layer in enumerate(self.layers):
             nodes = list(layer.values())
-            for node in layer.values():
-                nodes.sort(key=lambda n: self._calculate_distance(n, node))
-                for neighbor in nodes[:self.M]:
-                    self._create_connection(node, neighbor)
             with open(f'layer_{i}', "w") as fout:
-                for node in list(layer.values()):
-                    row_str = f"{id}," + ",".join([str(e) for e in node.vector])+",".join([str(n.id) for n in node.neighbours])
+                for node in layer.values():
+                    # we need to sort the nodes by their distance to the current node
+                    nodes.sort(key=lambda n: self._calculate_distance(n, node))
+                    for neighbor in nodes[1:self.M+1]:
+                        self._create_connection(node, neighbor)
+                    row_str = f"{node.id}," +",".join([str(n.id) for n in node.neighbours])
                     fout.write(f"{row_str}\n")
     
     def insert_records(self, rows: List[Dict[int, Annotated[List[float], 70]]]):
