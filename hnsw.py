@@ -31,7 +31,7 @@ class HNSW:
 
     # Find the nearest node in a layer
     def _find_nearest(self, layer: Dict[int, Node], node: Node) -> Node:
-        nearest_node = min(layer.values(), key=lambda n: self._calculate_distance(n, node))
+        nearest_node = max(layer.values(), key=lambda n: self._calculate_distance(n, node))
         return nearest_node
 
     # This method creates a connection between two nodes by adding each node to the other's list of neighbours.
@@ -48,7 +48,7 @@ class HNSW:
     def connect_nodes(self):
         for i,layer in enumerate(self.layers):
             nodes = list(layer.values())
-            with open(f'layer_{i}', "w") as fout:
+            with open(f'layers/layer_{i}', "w") as fout:
                 for node in layer.values():
                     # we need to sort the nodes by their distance to the current node
                     nodes.sort(key=lambda n: self._calculate_distance(n, node), reverse=True)
@@ -81,9 +81,9 @@ class HNSW:
         1. select the first line in the top layer as entry point 
         2. search over these neighbours and get the nearest neighbour to the query node by :
             a. get the data of the neighbours from the files of the data
-            b. get the id of nearest neighbour to the query node by calculating the distance between the query node and the neighbours and select the minimum
+            b. get the id of nearest neighbour to the query node by calculating the distance between the query node and the neighbours and select the maximum
             c. get the record of the nearest neighbour from the file of the data using binary search and linecache module
-            d. repeat step a and b until reaching the local minimum in this layer
+            d. repeat step a and b until reaching the local maximum in this layer
             e. after that go to the next layer
         3. down the layers, search over the neighbours of the nearest neighbour and get the nearest neighbour to the query node until reaching the bottom layer
         4. return the nearest neighbour to the query node
@@ -95,10 +95,10 @@ class HNSW:
         # get the largest layer number that contain data i.e. the self.layer_sizes[layer_number] > 0
         curr_layer = 0
         for i in range(len(self.layer_sizes)-1, 0, -1):
-            if self.layer_sizes[i] > 0:
+            if self.layer_sizes[i] > 1:
                 curr_layer = i
                 break
-        curr_node_record = lc.getline(f'layer_{curr_layer}', 1)
+        curr_node_record = lc.getline(f'layers/layer_{curr_layer}', 1)
         # get the id of the entry point
         curr_id = int(curr_node_record.split(',')[0])
         # get the record of the entry point from the file of the data
@@ -115,17 +115,17 @@ class HNSW:
             distances = [self._calculate_distance(n, Node(-1, query)) for n in neighbour_nodes]
             distances.append(self._calculate_distance(curr_node, Node(-1, query)))
             # Find the ID of the neighbor with the smallest distance
-            min_index = distances.index(min(distances))
+            max_index = distances.index(max(distances))
             # Get the ID of the nearest neighbor
-            if(min_index == len(distances)-1):
-                # we reach the local minimum in this layer
+            if(max_index == len(distances)-1):
+                # we reach the local maximum in this layer
                 curr_layer -= 1
                 if curr_layer < 0:
                     return [curr_id]
                 # get the record of the current node from the next layer
-                curr_node_record = file_binary_search(f'layer_{curr_layer}', curr_id, self.layer_sizes[curr_layer]) if curr_layer != 0 else lc.getline(f'layer_0', curr_id)
+                curr_node_record = file_binary_search(f'layers/layer_{curr_layer}', curr_id, self.layer_sizes[curr_layer]) if curr_layer != 0 else lc.getline(f'layers/layer_0', curr_id + 1)
                 continue
             # get the record of the nearest neighbour from the file of the data using binary search and linecache module
-            curr_node_record = file_binary_search(f'layer_{curr_layer}', neighbour_nodes[min_index].id, self.layer_sizes[curr_layer])
+            curr_node_record = file_binary_search(f'layers/layer_{curr_layer}', neighbour_nodes[max_index].id, self.layer_sizes[curr_layer])
             curr_id = int(curr_node_record.split(',')[0])
-            curr_data = curr_neighbours[min_index]
+            curr_data = curr_neighbours[max_index]
