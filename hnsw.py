@@ -22,7 +22,7 @@ class HNSW:
                 pass
 
     # Calculate the distance between two nodes by calculating the cosine similarity between their vectors.
-    def _calculate_distance(self, node1: Node, node2: Node) -> float:
+    def calculate_similarity(self, node1: Node, node2: Node) -> float:
         dot_product = np.dot(node1.vector, node2.vector)
         norm_vec1 = np.linalg.norm(node1.vector)
         norm_vec2 = np.linalg.norm(node2.vector)
@@ -31,7 +31,7 @@ class HNSW:
 
     # Find the nearest node in a layer
     def _find_nearest(self, layer: Dict[int, Node], node: Node) -> Node:
-        nearest_node = max(layer.values(), key=lambda n: self._calculate_distance(n, node))
+        nearest_node = max(layer.values(), key=lambda n: self.calculate_similarity(n, node))
         return nearest_node
 
     # This method creates a connection between two nodes by adding each node to the other's list of neighbours.
@@ -51,7 +51,7 @@ class HNSW:
             with open(f'layers/layer_{i}', "w") as fout:
                 for node in layer.values():
                     # we need to sort the nodes by their distance to the current node
-                    nodes.sort(key=lambda n: self._calculate_distance(n, node), reverse=True)
+                    nodes.sort(key=lambda n: self.calculate_similarity(n, node), reverse=True)
                     for neighbor in nodes[1:self.M+1]:
                         self._create_connection(node, neighbor)
                     row_str = f"{node.id}," +",".join([str(n.id) for n in node.neighbours])
@@ -112,8 +112,8 @@ class HNSW:
             # Create Node instances for each neighbor
             neighbour_nodes = [Node(int(n[0]), [float(e) for e in n[1:]]) for n in split_neighbour]
             # Calculate the distance from each neighbor to the query
-            distances = [self._calculate_distance(n, Node(-1, query)) for n in neighbour_nodes]
-            distances.append(self._calculate_distance(curr_node, Node(-1, query)))
+            distances = [self.calculate_similarity(n, Node(-1, query)) for n in neighbour_nodes]
+            distances.append(self.calculate_similarity(curr_node, Node(-1, query)))
             # Find the ID of the neighbor with the smallest distance
             max_index = distances.index(max(distances))
             # Get the ID of the nearest neighbor
