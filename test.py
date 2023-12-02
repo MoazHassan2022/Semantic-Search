@@ -1,1 +1,3 @@
-print(set(range(10)))
+matched = '837,'
+
+print(matched.split(',')[0])
