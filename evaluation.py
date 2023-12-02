@@ -58,12 +58,12 @@ def eval(results: List[Result]):
 if __name__ == "__main__":
     # db = VecDBWorst()
     db = HNSW(5, 4, "saved_db.csv", True)
-    records_np = np.random.random((1000, 2))
+    records_np = np.random.random((10, 2))
     records_dict = [{"id": i, "embed": list(row)} for i, row in enumerate(records_np)]
     _len = len(records_np)
     db.insert_records(records_dict)
     print("Index craeted!")
-    res = run_queries(db, records_np, 1, 1)
+    res = run_queries(db, records_np, 7, 1)
     print(eval(res))
     
     # TEST
