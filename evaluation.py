@@ -17,7 +17,7 @@ class Result:
 def run_queries(db, np_rows, top_k, num_runs):
     results = []
     for _ in range(num_runs):
-        query = np.random.random((1,2))
+        query = np.random.random((1,70))
         
         tic = time.time()
         db_ids = db.retrive(query,top_k)
@@ -58,12 +58,12 @@ def eval(results: List[Result]):
 if __name__ == "__main__":
     # db = VecDBWorst()
     db = HNSW(M=5, num_layers=4)
-    records_np = np.random.random((10000, 2))
+    records_np = np.random.random((1000, 70))
     records_dict = [{"id": i, "embed": list(row)} for i, row in enumerate(records_np)]
     _len = len(records_np)
     db.insert_records(records_dict)
     print("Index craeted!")
-    res = run_queries(db, records_np, 6, 10)
+    res = run_queries(db, records_np, 7, 10)
     print(eval(res))
     
     # TEST
