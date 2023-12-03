@@ -14,6 +14,7 @@ class HNSW:
         self.layers = [{} for _ in range(num_layers)]
         self.records_per_file = records_per_file
         self.layer_sizes = []
+        self.repeat_retrives_num = 5
 
     # Calculate the distance between two nodes by calculating the cosine similarity between their vectors.
     def calculate_similarity(self, node1: Node, node2: Node) -> float:
@@ -68,7 +69,7 @@ class HNSW:
         # delete the layers from the memory
         self.layers = [{} for _ in range(self.num_layers)]
 
-    def retrive(self, query: Annotated[List[float], 70], top_k = 1):
+    def retrive_n(self, query: Annotated[List[float], 70], top_n = 1):
         '''
         This method returns the nearest neighbour of the query node.
         1. select the first line in the top layer as entry point 
@@ -85,7 +86,7 @@ class HNSW:
         query = query.T
         
         # determine the number of nodes we will down with in each layer
-        num_nodes_down = np.ceil(top_k/self.M).astype(int)
+        num_nodes_down = np.ceil(top_n/self.M).astype(int)
         
         # select the first line in the top layer as entry point
         # read the top layer file and get the first line using linecache module
@@ -141,52 +142,24 @@ class HNSW:
         
             # Calculate the distance from each neighbor to the query
             query_node = Node(-1, query)
+            
+            # TODO: sort nodes by similarity (put larger similarity first), return these nodes 
+            
             # calculate the similarity between the query node and the neighbours
-            neighbours_similarity = [(neighbour_id, self.calculate_similarity(curr_neighbours_nodes[neighbour_id], query_node)) for neighbour_id in curr_neighbours_nodes]
+            curr_neighbours_nodes_list = [curr_neighbours_nodes[neighbour_id] for neighbour_id in curr_neighbours_nodes]
         
-            # Find the IDs of the num_nodes_down neighbours with the max distances
-            max_similarity = sorted(neighbours_similarity, key=lambda neighbour_similarity: neighbour_similarity[1])
+            # sort the neighbours by their similarity to the query node
+            max_similarity = sorted(curr_neighbours_nodes_list, key=lambda curr_neighbours_node: self.calculate_similarity(curr_neighbours_node, query_node), reverse=True)
 
             # get new ids of the neighbours
-            max_ids = [neighbour_similarity[0] for neighbour_similarity in max_similarity[-num_nodes_down:]]
+            max_ids = [neighbour_similarity.id for neighbour_similarity in max_similarity[0 : num_nodes_down]]
             
             # Get the IDs of the nearest neighbors
             if(set(max_ids) == set(curr_ids)):
                 # we reach the local maximum in this layer
                 curr_layer -= 1
                 if curr_layer < 0:
-                    # largen the nodes to be returned to the size of top_k
-                    # we want to return the top_k results from max_ids
-                    # we need to sort the nodes by their distance to the query node
-                    if len(max_similarity) >= top_k:
-                        return [i[0] for i in max_similarity[-top_k:]]
-                    
-                    max_similarity_ids = [i[0] for i in max_similarity]
-                    difference = top_k - len(max_similarity_ids) # number of nodes to be added to the result
-                    
-                    # we need to add more nodes to the result
-                    max_similarity_index = 0
-                    curr_max_similarity = max_similarity[max_similarity_index]
-                    while difference > 0:
-                        # get the record of this node from layer_0 file
-                        curr_max_similarity_record = lc.getline(f'layers/layer_0', curr_max_similarity[0] + 1)
-                        
-                        # remove '\n' from the record
-                        curr_max_similarity_record = curr_max_similarity_record[:-1].split(',')[1:]
-                        
-                        # remove ids from the record that already exist in the result
-                        curr_max_similarity_record = [int(i) for i in curr_max_similarity_record if int(i) not in max_similarity_ids]
-                        number_of_neighbours = len(curr_max_similarity_record)
-                        new_difference = difference - number_of_neighbours
-                        if new_difference < 0:
-                            # we need to add only the first difference neighbours
-                            curr_max_similarity_record = curr_max_similarity_record[:difference]
-                            difference = 0
-                        max_similarity_ids.extend(curr_max_similarity_record)
-                        
-                        # move to the next node    
-                        max_similarity_index += 1
-                        curr_max_similarity = max_similarity[max_similarity_index]
+                    return max_similarity[0: top_n]
         
                 # get the records of the current nodes from the next layer
                 curr_node_records = [file_binary_search(f'layers/layer_{curr_layer}', curr_id, self.layer_sizes[curr_layer]) if curr_layer != 0 else lc.getline(f'layers/layer_0', curr_id + 1) for curr_id in curr_ids]
@@ -196,4 +169,38 @@ class HNSW:
             curr_node_records = [file_binary_search(f'layers/layer_{curr_layer}', max_id, self.layer_sizes[curr_layer]) for max_id in max_ids]
             curr_ids = max_ids
             curr_nodes = [curr_neighbours_nodes[max_id] for max_id in max_ids]
+    def retrive(self, query: Annotated[List[float], 70], top_k = 1):
+        # retrieve only connections length + 1 nodes (list of Node sorted from larger similarity to smaller similarity)
+        # why self.M + 1? because in layer file, every node has itself + M neighbours
+        # and sometimes we will have closed groups of such nodes, each group has M + 1 nodes
+        top_nodes = self.retrive_n(query, min(self.M + 1, top_k))
+        if len(top_nodes) == top_k:
+            top_nodes_ids = [i.id for i in top_nodes]
+            return top_nodes_ids
+        
+        top_nodes_dict = {node.id: node for node in top_nodes}
+        
+        previous_len = 0
+        new_len = len(top_nodes_dict)
+        # we need to add more nodes to the result
+        while new_len != previous_len and new_len != top_k:
+            # retive more nodes and update set
+            top_nodes = self.retrive_n(np.array(top_nodes[-1].vector), min(self.M + 1, top_k - new_len))
             
+            for node in top_nodes:
+                if not top_nodes_dict.get(node.id):
+                    top_nodes_dict[node.id] = node
+            
+            previous_len = new_len
+            new_len = len(top_nodes_dict)
+        
+        top_nodes = [top_nodes_dict[node_id] for node_id in top_nodes_dict]
+        
+        # sort nodes by similarity (put larger similarity first), return these nodes
+        sorted(top_nodes, key=lambda n: self.calculate_similarity(n, Node(-1, query.T)), reverse=True)
+        top_nodes_ids = [i.id for i in top_nodes]
+        if new_len < top_k:
+            # add random nodes
+            top_nodes_ids.extend([random.randint(0, self.layer_sizes[0] - 1) for _ in range(top_k - new_len)])
+            
+        return top_nodes_ids
