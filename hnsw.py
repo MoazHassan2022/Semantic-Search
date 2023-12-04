@@ -97,26 +97,20 @@ class HNSW:
                 curr_layer = i
                 break
             
-        # generate unique random initial points in the top layer between 0 and min(self.layer_sizes[curr_layer], num_nodes_down)
-        random_lines = set(random.sample(range(0, self.layer_sizes[curr_layer] - 1), min(num_nodes_down,self.layer_sizes[curr_layer])))
-        
-        # if the random_lines has less lines than min(num_nodes_down,self.layer_sizes[curr_layer]) we need to add more lines to it
-        while len(random_lines) < min(num_nodes_down,self.layer_sizes[curr_layer]):
-            random_lines.add(random.randint(0, self.layer_sizes[curr_layer] - 1))
-        
-        print("random_lines len: ", len(random_lines))
-        
+        # get the initial lines of the entry points from the top layer file based on the similarity between the query node and the all points of the top layer
+        top_layer_lines = [lc.getline(f'layers/layer_{curr_layer}', i + 1) for i in range(self.layer_sizes[curr_layer])]
+        top_layer_ids = [int(top_layer_line.split(',')[0]) for top_layer_line in top_layer_lines]
+        top_layer_data = [lc.getline(f'data/data_{top_layer_id // self.records_per_file}', top_layer_id % self.records_per_file + 1) for top_layer_id in top_layer_ids]
+        top_layer_nodes = [Node(top_layer_id, [float(e) for e in top_layer_data.split(',')[1:]]) for top_layer_id, top_layer_data in zip(top_layer_ids, top_layer_data)]
+        sorted(top_layer_nodes,key=lambda n: self.calculate_similarity(n, Node(-1, query)), reverse=True)
+        curr_nodes = top_layer_nodes[0 : num_nodes_down]
         # get the records of the entry points from the top layer file
-        curr_node_records = [lc.getline(f'layers/layer_{curr_layer}', random_line + 1) for random_line in random_lines]
+        curr_node_records = top_layer_lines[0 : num_nodes_down]
         
         # get the ids of the entry points
-        curr_ids = [int(curr_node_record.split(',')[0]) for curr_node_record in curr_node_records]
-        
-        # get the records of the entry points from the file of the data
-        curr_data = [lc.getline(f'data/data_{curr_id // self.records_per_file}', curr_id % self.records_per_file + 1) for curr_id in curr_ids]
+        curr_ids = top_layer_ids[0 : num_nodes_down]
         
         # convert to nodes
-        curr_nodes = [Node(curr_node_id, [float(e) for e in curr_node_data.split(',')[1:]]) for curr_node_id, curr_node_data in zip(curr_ids, curr_data)]
         while True:
             # get the data of all neighbours of all curr nodes from the files of the data
             # make sure that the neighbours are unique
