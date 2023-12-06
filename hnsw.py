@@ -11,7 +11,8 @@ class HNSW:
         self.M = M
         self.m_L = 1/np.log(M)
         self.num_layers = num_layers
-        self.layers = [{} for _ in range(num_layers)]
+        self.nodes = {}
+        self.layers = [set() for _ in range(num_layers)]
         self.records_per_file = records_per_file
         self.layer_sizes = []
         self.repeat_retrives_num = 5
@@ -26,15 +27,16 @@ class HNSW:
 
     def insert(self, node: Node):
         probabilities = [np.exp(-i / self.m_L) * (1 - np.exp(-1 / self.m_L)) for i in range(len(self.layers))]
+        self.nodes[node.id] = node
         for i in range(len(self.layers)):  # start from the bottom layer
-            self.layers[i][node.id] = Node(node.id, node.vector)
+            self.layers[i].add(node.id)
             if random.random() - sum(probabilities[:i]) < probabilities[i] :
                 break
     
     # This method creates a connection between two nodes by adding each node to the other's list of neighbours.
     def _create_connection(self, node1: Node, node2: Node):
         node1.neighbours.add(node2)
-
+            
     def connect_nodes(self):
         for i,layer in enumerate(self.layers):
             nodes = list(layer.values())
@@ -45,6 +47,27 @@ class HNSW:
                     for neighbor in nodes[1:self.M+1]:
                         self._create_connection(node, neighbor)
                     row_str = f"{node.id}," +",".join([str(n.id) for n in node.neighbours])
+                    fout.write(f"{row_str}\n")
+                                    
+    def connect_nodes_optimized(self):
+        # Precompute similarities and sort nodes only once
+        nodes_length = len(self.nodes)
+        similarity_matrix = np.zeros((nodes_length, nodes_length))
+
+        for node_id1 in self.nodes:
+            for node_id2 in self.nodes:
+                if node_id1 < node_id2:
+                    node1, node2 = self.nodes[node_id1], self.nodes[node_id2]
+                    similarity_matrix[node_id1, node_id2] = self.calculate_similarity(node1, node2)
+                    similarity_matrix[node_id2, node_id1] = similarity_matrix[node_id1, node_id2]
+
+        for i, layer in enumerate(self.layers):
+            nodes_ids = list(layer)
+            with open(f'layers/layer_{i}.csv', "w") as fout:
+                for node_id in layer:
+                    # we need to sort the nodes by their distance to the current node
+                    nodes_ids.sort(key=lambda neighbour_id: similarity_matrix[node_id, neighbour_id], reverse=True)
+                    row_str = f"{node_id}," + ",".join(map(str, nodes_ids[:self.M]))
                     fout.write(f"{row_str}\n")
 
     def insert_records(self, rows: List[Dict[int, Annotated[List[float], 70]]]):
@@ -60,9 +83,9 @@ class HNSW:
             node = Node(id, embed)
             self.insert(node)
         self.layer_sizes = [len(layer) for layer in self.layers]
-        self.connect_nodes()
+        self.connect_nodes_optimized()
         # delete the layers from the memory
-        self.layers = [{} for _ in range(self.num_layers)]
+        self.layers = [[] for _ in range(self.num_layers)]
 
     def retrive_n(self, query: Annotated[List[float], 70], top_n = 1):
         '''
@@ -93,7 +116,8 @@ class HNSW:
                 break
             
         # generate unique random initial points in the top layer between 0 and min(self.layer_sizes[curr_layer], num_nodes_down)
-        random_lines = set(random.sample(range(0, self.layer_sizes[curr_layer] - 1), min(num_nodes_down,self.layer_sizes[curr_layer])))
+        random_ids = [random.randint(0, self.layer_sizes[curr_layer] - 1) for _ in range(min(num_nodes_down,self.layer_sizes[curr_layer]))]
+        random_lines = set(random_ids)
         
         # if the random_lines has less lines than min(num_nodes_down,self.layer_sizes[curr_layer]) we need to add more lines to it
         while len(random_lines) < min(num_nodes_down,self.layer_sizes[curr_layer]):
