@@ -4,6 +4,8 @@ from typing import Dict, List, Annotated, Optional
 from node import Node
 import linecache as lc
 from helpers import *
+from sklearn.cluster import KMeans
+import time
 
 class HNSW:
 
@@ -16,11 +18,17 @@ class HNSW:
         self.layer_sizes = []
         self.repeat_retrives_num = 5
 
+    def pq_encode(self, vector: List[float], codebook: np.ndarray, kmeans: KMeans) -> List[int]:
+        # Perform Product Quantization encoding
+        subvectors = np.array_split(vector, codebook.shape[1])
+        subcodes = [kmeans.predict(subvector.reshape(1, -1))[0] for subvector in subvectors]
+        return subcodes
+
     # Calculate the distance between two nodes by calculating the cosine similarity between their vectors.
     def calculate_similarity(self, node1: Node, node2: Node) -> float:
-        dot_product = np.dot(node1.vector, node2.vector)
-        norm_vec1 = np.linalg.norm(node1.vector)
-        norm_vec2 = np.linalg.norm(node2.vector)
+        dot_product = np.dot(node1.pq_code, node2.pq_code)
+        norm_vec1 = np.linalg.norm(node1.pq_code)
+        norm_vec2 = np.linalg.norm(node2.pq_code)
         cosine_similarity = dot_product / (norm_vec1 * norm_vec2)
         return cosine_similarity
 
@@ -36,7 +44,7 @@ class HNSW:
     def insert(self, node: Node):
         probabilities = [np.exp(-i / self.m_L) * (1 - np.exp(-1 / self.m_L)) for i in range(len(self.layers))]
         for i in range(len(self.layers)):  # start from the bottom layer
-            self.layers[i][node.id] = Node(node.id, node.vector)
+            self.layers[i][node.id] = Node(node.id, node.pq_code)
             if random.random() - sum(probabilities[:i]) < probabilities[i] :
                 break
 
@@ -47,29 +55,48 @@ class HNSW:
                 for node in layer.values():
                     # we need to sort the nodes by their distance to the current node
                     nodes.sort(key=lambda n: self.calculate_similarity(n, node), reverse=True)
-                    for neighbor in nodes[1:self.M+1]:
-                        self._create_connection(node, neighbor)
-                    row_str = f"{node.id}," +",".join([str(n.id) for n in node.neighbours])
+                    row_str = f"{node.id}," +",".join([str(n.id) for n in nodes[1:self.M + 1]])
                     fout.write(f"{row_str}\n")
 
-    def insert_records(self, rows: List[Dict[int, Annotated[List[float], 70]]]):
+    def insert_records(self, rows: List[Dict[int, Annotated[List[float], 70]]], num_subvectors: int = 14, num_clusters: int = 64):
+        tic = time.time()
+        # Perform Product Quantization encoding for each subvector
+        codebooks = []
+        kmeans_models = []
+        nodes = []
+        for i in range(num_subvectors):
+            subvectors = np.array([row["embed"][i *  70//num_subvectors:(i + 1) * 70// num_subvectors] for row in rows])
+            kmeans = KMeans(n_clusters=num_clusters)
+            kmeans.fit(subvectors)
+            codebooks.append(kmeans.cluster_centers_)
+            kmeans_models.append(kmeans)
+        self.codebooks = codebooks
+        self.kmeans_models = kmeans_models
+        for row in rows:
+            id, embed = row["id"], row["embed"]
+            embed = np.array(embed)
+            subvectors = np.array_split(embed, num_subvectors)
+            pq_codes = [kmeans.predict(subvector.reshape(1, -1))[0] for subvector, kmeans in zip(subvectors, kmeans_models)]
+            node = Node(id, pq_codes)
+            nodes.append(node)
+            self.insert(node)
+
         # insert records to the file such that each file has self.records_per_file row of records and name the file as data_0, data_1, etc.
         for i in range(len(rows) // self.records_per_file):
             with open(f'data/data_{i}', "w") as fout:
-                for row in rows[i*self.records_per_file:(i+1)*self.records_per_file]:
-                    id, embed = row["id"], row["embed"]
+                for node in nodes[i*self.records_per_file:(i+1)*self.records_per_file]:
+                    id, embed = node.id, node.pq_code
                     row_str = f"{id}," + ",".join([str(e) for e in embed])
                     fout.write(f"{row_str}\n")
-        for row in rows:
-            id, embed = row["id"], row["embed"]
-            node = Node(id, embed)
-            self.insert(node)
         self.layer_sizes = [len(layer) for layer in self.layers]
+        toc = time.time()
+        print(f'PQ! time = {toc-tic}')
         self.connect_nodes()
         # delete the layers from the memory
         self.layers = [{} for _ in range(self.num_layers)]
 
-    def retrive_n(self, query: Annotated[List[float], 70], top_n = 1):
+
+    def retrive_n(self, query: Annotated[List[float], 70], top_n = 1, num_subvectors: int = 14, num_clusters: int = 64) -> List[Node]:
         '''
         This method returns the nearest neighbour of the query node.
         1. select the first line in the top layer as entry point 
@@ -83,8 +110,10 @@ class HNSW:
         4. return the nearest neighbour to the query node
         note : we are using linecache module to read lines from the files 
         '''
-        query = query.T
         
+        # Encode the query vector using Product Quantization
+        sub_vectors = np.array_split(query[0], num_subvectors)
+        query = [kmeans.predict(subvector.reshape(1, -1))[0] for subvector, kmeans in zip(sub_vectors, self.kmeans_models)]
         # determine the number of nodes we will down with in each layer
         num_nodes_down = np.ceil(top_n/self.M).astype(int)
         
@@ -163,38 +192,18 @@ class HNSW:
             curr_node_records = [file_binary_search(f'layers/layer_{curr_layer}', max_id, self.layer_sizes[curr_layer]) for max_id in max_ids]
             curr_ids = max_ids
             curr_nodes = [curr_neighbours_nodes[max_id] for max_id in max_ids]
+
     def retrive(self, query: Annotated[List[float], 70], top_k = 1):
         # retrieve only connections length + 1 nodes (list of Node sorted from larger similarity to smaller similarity)
         # why self.M + 1? because in layer file, every node has itself + M neighbours
         # and sometimes we will have closed groups of such nodes, each group has M + 1 nodes
         top_nodes = self.retrive_n(query, min(self.M + 1, top_k))
-        if len(top_nodes) == top_k:
-            top_nodes_ids = [i.id for i in top_nodes]
+        top_nodes_ids = [i.id for i in top_nodes]
+        
+        if len(top_nodes_ids) == top_k:
             return top_nodes_ids
         
-        top_nodes_dict = {node.id: node for node in top_nodes}
+        # add random nodes
+        top_nodes_ids.extend([random.randint(0, self.layer_sizes[0] - 1) for _ in range(top_k - len(top_nodes_ids))])
         
-        previous_len = 0
-        new_len = len(top_nodes_dict)
-        # we need to add more nodes to the result
-        while new_len != previous_len and new_len != top_k:
-            # retive more nodes and update set
-            top_nodes = self.retrive_n(np.array(top_nodes[-1].vector), min(self.M + 1, top_k - new_len))
-            
-            for node in top_nodes:
-                if not top_nodes_dict.get(node.id):
-                    top_nodes_dict[node.id] = node
-            
-            previous_len = new_len
-            new_len = len(top_nodes_dict)
-        
-        top_nodes = [top_nodes_dict[node_id] for node_id in top_nodes_dict]
-        
-        # sort nodes by similarity (put larger similarity first), return these nodes
-        sorted(top_nodes, key=lambda n: self.calculate_similarity(n, Node(-1, query.T)), reverse=True)
-        top_nodes_ids = [i.id for i in top_nodes]
-        if new_len < top_k:
-            # add random nodes
-            top_nodes_ids.extend([random.randint(0, self.layer_sizes[0] - 1) for _ in range(top_k - new_len)])
-            
         return top_nodes_ids
