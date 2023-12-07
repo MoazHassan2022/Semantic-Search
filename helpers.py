@@ -1,4 +1,6 @@
 import linecache as lc
+from node import Node
+import numpy as np
 
 def file_binary_search(file_path, record_id, num_lines):
     '''
@@ -26,3 +28,19 @@ def file_binary_search(file_path, record_id, num_lines):
     # if the record is not found, return None
     return None
     
+# Calculate the distance between two nodes by calculating the cosine similarity between their vectors.
+def calculate_similarity(node1: Node, node2: Node) -> float:
+    dot_product = np.dot(node1.vector, node2.vector)
+    norm_vec1 = np.linalg.norm(node1.vector)
+    norm_vec2 = np.linalg.norm(node2.vector)
+    cosine_similarity = dot_product / (norm_vec1 * norm_vec2)
+    return cosine_similarity
+    
+def calculate_pairwise_similarity(args):
+    node_id1, nodes = args
+    results = {}
+    for node_id2 in range(node_id1 + 1, len(nodes)):
+        node1, node2 = nodes[node_id1], nodes[node_id2]
+        similarity = calculate_similarity(node1, node2)
+        results[(node_id1, node_id2)] = similarity
+    return results

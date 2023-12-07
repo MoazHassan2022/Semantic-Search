@@ -1,9 +1,11 @@
 import numpy as np
 import random
-from typing import Dict, List, Annotated, Optional
+from typing import Dict, List, Annotated
 from node import Node
 import linecache as lc
 from helpers import *
+import os, time, threading
+import multiprocessing
 
 class HNSW:
 
@@ -17,14 +19,6 @@ class HNSW:
         self.layer_sizes = []
         self.repeat_retrives_num = 5
 
-    # Calculate the distance between two nodes by calculating the cosine similarity between their vectors.
-    def calculate_similarity(self, node1: Node, node2: Node) -> float:
-        dot_product = np.dot(node1.vector, node2.vector)
-        norm_vec1 = np.linalg.norm(node1.vector)
-        norm_vec2 = np.linalg.norm(node2.vector)
-        cosine_similarity = dot_product / (norm_vec1 * norm_vec2)
-        return cosine_similarity
-
     def insert(self, node: Node):
         probabilities = [np.exp(-i / self.m_L) * (1 - np.exp(-1 / self.m_L)) for i in range(len(self.layers))]
         self.nodes[node.id] = node
@@ -33,45 +27,59 @@ class HNSW:
             if random.random() - sum(probabilities[:i]) < probabilities[i] :
                 break
     
-    # This method creates a connection between two nodes by adding each node to the other's list of neighbours.
-    def _create_connection(self, node1: Node, node2: Node):
-        node1.neighbours.add(node2)
+    def parallel_compute_similarity(self):
+        num_processes = multiprocessing.cpu_count()  # or some other number of processes you want to use
+
+        print(f"Using {num_processes} processes")
+        
+        with multiprocessing.Pool(num_processes) as pool:
+            # Create argument tuples for each process
+            args = [(node_id1, self.nodes) for node_id1 in range(len(self.nodes))]
             
-    def connect_nodes(self):
-        for i,layer in enumerate(self.layers):
-            nodes = list(layer.values())
-            with open(f'layers/layer_{i}', "w") as fout:
-                for node in layer.values():
-                    # we need to sort the nodes by their distance to the current node
-                    nodes.sort(key=lambda n: self.calculate_similarity(n, node), reverse=True)
-                    for neighbor in nodes[1:self.M+1]:
-                        self._create_connection(node, neighbor)
-                    row_str = f"{node.id}," +",".join([str(n.id) for n in node.neighbours])
-                    fout.write(f"{row_str}\n")
-                 
-                                    
+            # Map the function across the processes
+            results = pool.map(calculate_pairwise_similarity, args)
+
+        # Combine results
+        for partial_result in results:
+            for (node_id1, node_id2), similarity in partial_result.items():
+                self.similarity_matrix[node_id1, node_id2] = similarity
+                self.similarity_matrix[node_id2, node_id1] = similarity
+              
     def connect_nodes_optimized(self):
         # Precompute similarities and sort nodes only once
         nodes_length = len(self.nodes)
-        similarity_matrix = np.zeros((nodes_length, nodes_length))
+        self.similarity_matrix = np.zeros((nodes_length, nodes_length))
 
-        for node_id1 in self.nodes:
-            for node_id2 in self.nodes:
-                if node_id1 < node_id2:
-                    node1, node2 = self.nodes[node_id1], self.nodes[node_id2]
-                    similarity_matrix[node_id1, node_id2] = self.calculate_similarity(node1, node2)
-                    similarity_matrix[node_id2, node_id1] = similarity_matrix[node_id1, node_id2]
-
+        tic = time.time()
+        """ for node_id1 in range(len(self.nodes)):
+            for node_id2 in range(node_id1 + 1, len(self.nodes)):
+                node1, node2 = self.nodes[node_id1], self.nodes[node_id2]
+                self.similarity_matrix[node_id1, node_id2] = calculate_similarity(node1, node2)
+                self.similarity_matrix[node_id2, node_id1] = self.similarity_matrix[node_id1, node_id2] """
+        self.parallel_compute_similarity()
+        toc = time.time()
+        print("Similarity matrix created! Time: %s sec" % (toc - tic))
+        
+        # Check if directory exists
+        if not os.path.exists('layers'):
+            # If not, create it
+            os.makedirs('layers')
+            
         for i, layer in enumerate(self.layers):
             nodes_ids = list(layer)
             with open(f'layers/layer_{i}', "w") as fout:
                 for node_id in layer:
                     # we need to sort the nodes by their distance to the current node
-                    nodes_ids.sort(key=lambda neighbour_id: similarity_matrix[node_id, neighbour_id], reverse=True)
+                    nodes_ids.sort(key=lambda neighbour_id: self.similarity_matrix[node_id, neighbour_id], reverse=True)
                     row_str = f"{node_id}," + ",".join(map(str, nodes_ids[:self.M]))
                     fout.write(f"{row_str}\n")
 
     def insert_records(self, rows: List[Dict[int, Annotated[List[float], 70]]]):
+        # Check if directory exists
+        if not os.path.exists('data'):
+            # If not, create it
+            os.makedirs('data')
+            
         # insert records to the file such that each file has self.records_per_file row of records and name the file as data_0, data_1, etc.
         for i in range(len(rows) // self.records_per_file):
             with open(f'data/data_{i}', "w") as fout:
@@ -86,7 +94,9 @@ class HNSW:
         self.layer_sizes = [len(layer) for layer in self.layers]
         self.connect_nodes_optimized()
         # delete the layers from the memory
-        self.layers = [[] for _ in range(self.num_layers)]
+        self.layers = None
+        self.nodes = None
+        self.similarity_matrix = None
 
     def retrive_n(self, query: Annotated[List[float], 70], top_n = 1):
         '''
@@ -167,7 +177,7 @@ class HNSW:
             curr_neighbours_nodes_list = [curr_neighbours_nodes[neighbour_id] for neighbour_id in curr_neighbours_nodes]
         
             # sort the neighbours by their similarity to the query node
-            max_similarity = sorted(curr_neighbours_nodes_list, key=lambda curr_neighbours_node: self.calculate_similarity(curr_neighbours_node, query_node), reverse=True)
+            max_similarity = sorted(curr_neighbours_nodes_list, key=lambda curr_neighbours_node: calculate_similarity(curr_neighbours_node, query_node), reverse=True)
 
             # get new ids of the neighbours
             max_ids = [neighbour_similarity.id for neighbour_similarity in max_similarity[0 : num_nodes_down]]
@@ -220,7 +230,7 @@ class HNSW:
         top_nodes = [top_nodes_dict[node_id] for node_id in top_nodes_dict]
         
         # sort nodes by similarity (put larger similarity first), return these nodes
-        sorted(top_nodes, key=lambda n: self.calculate_similarity(n, Node(-1, query.T)), reverse=True)
+        sorted(top_nodes, key=lambda n: calculate_similarity(n, Node(-1, query.T)), reverse=True)
         top_nodes_ids = [i.id for i in top_nodes]
         if new_len < top_k:
             # add random nodes
