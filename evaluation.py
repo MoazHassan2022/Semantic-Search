@@ -3,7 +3,7 @@ from worst_case_implementation import VecDBWorst
 import time
 from dataclasses import dataclass
 from typing import List
-from hnsw import HNSW
+from pq import PQ
 
 AVG_OVERX_ROWS = 10
 
@@ -57,7 +57,7 @@ def eval(results: List[Result]):
 
 if __name__ == "__main__":
     # db = VecDBWorst()
-    db = HNSW(M=5, num_layers=4)
+    db = PQ()
     records_np = np.random.random((1000, 70))
     records_dict = [{"id": i, "embed": list(row)} for i, row in enumerate(records_np)]
     _len = len(records_np)
