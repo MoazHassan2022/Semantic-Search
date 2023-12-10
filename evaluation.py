@@ -57,7 +57,7 @@ def eval(results: List[Result]):
 
 if __name__ == "__main__":
     # db = VecDBWorst()
-    db = HNSW(M=5, num_layers=4)
+    db = HNSW(M=50, num_layers=4)
     records_np = np.random.random((1000, 70))
     records_dict = [{"id": i, "embed": list(row)} for i, row in enumerate(records_np)]
     _len = len(records_np)
@@ -66,7 +66,7 @@ if __name__ == "__main__":
     toc = time.time()
     run_time = toc - tic
     print("Index craeted! Time: %s sec" % run_time)
-    res = run_queries(db, records_np, top_k=6, num_runs=5)
+    res = run_queries(db, records_np, top_k=7, num_runs=5)
     print(eval(res))
     
     # TEST

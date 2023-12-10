@@ -1,9 +1,10 @@
 import numpy as np
 import random
-from typing import Dict, List, Annotated, Optional
+from typing import Dict, List, Annotated
 from node import Node
 import linecache as lc
 from helpers import *
+import os
 
 class HNSW:
 
@@ -30,26 +31,26 @@ class HNSW:
             self.layers[i][node.id] = Node(node.id, node.vector)
             if random.random() - sum(probabilities[:i]) < probabilities[i] :
                 break
-    
-    # This method creates a connection between two nodes by adding each node to the other's list of neighbours.
-    def _create_connection(self, node1: Node, node2: Node):
-        node1.neighbours.add(node2)
 
     def connect_nodes(self):
         for i,layer in enumerate(self.layers):
             nodes = list(layer.values())
+            # Create the folder if it doesn't exist
+            if not os.path.exists('layers'):
+                os.makedirs('layers')
             with open(f'layers/layer_{i}', "w") as fout:
                 for node in layer.values():
                     # we need to sort the nodes by their distance to the current node
                     nodes.sort(key=lambda n: self.calculate_similarity(n, node), reverse=True)
-                    for neighbor in nodes[1:self.M+1]:
-                        self._create_connection(node, neighbor)
-                    row_str = f"{node.id}," +",".join([str(n.id) for n in node.neighbours])
+                    row_str = f"{node.id}," +",".join([str(n.id) for n in nodes[1:self.M+1]])
                     fout.write(f"{row_str}\n")
 
     def insert_records(self, rows: List[Dict[int, Annotated[List[float], 70]]]):
         # insert records to the file such that each file has self.records_per_file row of records and name the file as data_0, data_1, etc.
         for i in range(len(rows) // self.records_per_file):
+            # Create the folder if it doesn't exist
+            if not os.path.exists('data'):
+                os.makedirs('data')
             with open(f'data/data_{i}', "w") as fout:
                 for row in rows[i*self.records_per_file:(i+1)*self.records_per_file]:
                     id, embed = row["id"], row["embed"]
