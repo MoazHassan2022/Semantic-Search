@@ -20,18 +20,13 @@ class PQ:
         cosine_similarity = dot_product / (norm_vec1 * norm_vec2)
         return cosine_similarity
 
-
-
     def insert_records(self, rows: List[Dict[int, Annotated[List[float], 70]]]):
-        num_subvectors = self.num_subvectors
-        num_clusters = self.num_centroids
-        
         # Perform Product Quantization encoding for each subvector
         codebooks = []
         kmeans_models = []
-        for i in range(num_subvectors):
-            subvectors = np.array([row["embed"][i *  70//num_subvectors:(i + 1) * 70// num_subvectors] for row in rows])
-            kmeans = KMeans(n_clusters=num_clusters)
+        for i in range(self.num_subvectors):
+            subvectors = np.array([row["embed"][i *  70//self.num_subvectors:(i + 1) * 70// self.num_subvectors] for row in rows])
+            kmeans = KMeans(n_clusters=self.num_centroids, n_init=10)
             kmeans.fit(subvectors)
             codebooks.append(kmeans.cluster_centers_)
             kmeans_models.append(kmeans)
@@ -39,16 +34,30 @@ class PQ:
         self.kmeans_models = kmeans_models
         self.data_size = len(rows)
 
+        result_records = np.zeros((len(rows), self.num_subvectors), dtype=np.uint16)
+        for i in range(self.num_subvectors):
+            subvectors = np.array([row["embed"][i *  70//self.num_subvectors:(i + 1) * 70// self.num_subvectors] for row in rows])
+            result_records[:, i] = kmeans_models[i].predict(subvectors)
+        
         # insert records to the file such that each file has self.records_per_file row of records and name the file as data_0, data_1, etc.
+        for i in range(len(rows) // self.records_per_file):
+            with open(f'data/data_{i}', "w") as fout:
+                for row in rows[i*self.records_per_file:(i+1)*self.records_per_file]:
+                    id = row["id"]
+                    pq_codes = result_records[id]
+                    row_str = f"{id}," + ",".join([str(e) for e in pq_codes])
+                    fout.write(f"{row_str}\n")
+                    
+        """ # insert records to the file such that each file has self.records_per_file row of records and name the file as data_0, data_1, etc.
         for i in range(len(rows) // self.records_per_file):
             with open(f'data/data_{i}', "w") as fout:
                 for row in rows[i*self.records_per_file:(i+1)*self.records_per_file]:
                     id, embed = row["id"], row["embed"]
                     embed = np.array(embed)
-                    subvectors = np.array_split(embed, num_subvectors)
+                    subvectors = np.array_split(embed, self.num_subvectors)
                     pq_codes = [kmeans.predict(subvector.reshape(1, -1))[0] for subvector, kmeans in zip(subvectors, kmeans_models)]
                     row_str = f"{id}," + ",".join([str(e) for e in pq_codes])
-                    fout.write(f"{row_str}\n")
+                    fout.write(f"{row_str}\n") """
 
     def retrive(self, query: Annotated[List[float], 70], top_k = 1):
         '''
