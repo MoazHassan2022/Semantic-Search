@@ -24,21 +24,16 @@ class HNSW:
         cosine_similarity = dot_product / (norm_vec1 * norm_vec2)
         return cosine_similarity
 
-    # Find the nearest node in a layer
-    def _find_nearest(self, layer: Dict[int, Node], node: Node) -> Node:
-        nearest_node = max(layer.values(), key=lambda n: self.calculate_similarity(n, node))
-        return nearest_node
-
-    # This method creates a connection between two nodes by adding each node to the other's list of neighbours.
-    def _create_connection(self, node1: Node, node2: Node):
-        node1.neighbours.add(node2)
-
     def insert(self, node: Node):
         probabilities = [np.exp(-i / self.m_L) * (1 - np.exp(-1 / self.m_L)) for i in range(len(self.layers))]
         for i in range(len(self.layers)):  # start from the bottom layer
             self.layers[i][node.id] = Node(node.id, node.vector)
             if random.random() - sum(probabilities[:i]) < probabilities[i] :
                 break
+    
+    # This method creates a connection between two nodes by adding each node to the other's list of neighbours.
+    def _create_connection(self, node1: Node, node2: Node):
+        node1.neighbours.add(node2)
 
     def connect_nodes(self):
         for i,layer in enumerate(self.layers):
@@ -103,8 +98,6 @@ class HNSW:
         # if the random_lines has less lines than min(num_nodes_down,self.layer_sizes[curr_layer]) we need to add more lines to it
         while len(random_lines) < min(num_nodes_down,self.layer_sizes[curr_layer]):
             random_lines.add(random.randint(0, self.layer_sizes[curr_layer] - 1))
-        
-        print("random_lines len: ", len(random_lines))
         
         # get the records of the entry points from the top layer file
         curr_node_records = [lc.getline(f'layers/layer_{curr_layer}', random_line + 1) for random_line in random_lines]
@@ -174,11 +167,16 @@ class HNSW:
         # why self.M + 1? because in layer file, every node has itself + M neighbours
         # and sometimes we will have closed groups of such nodes, each group has M + 1 nodes
         top_nodes = self.retrive_n(query, min(self.M + 1, top_k))
-        if len(top_nodes) == top_k:
-            top_nodes_ids = [i.id for i in top_nodes]
+        top_nodes_ids = [i.id for i in top_nodes]
+        
+        if len(top_nodes_ids) == top_k:
             return top_nodes_ids
         
-        top_nodes_dict = {node.id: node for node in top_nodes}
+        # add random nodes
+        top_nodes_ids.extend([random.randint(0, self.layer_sizes[0] - 1) for _ in range(top_k - len(top_nodes_ids))])
+        
+        return top_nodes_ids
+        """top_nodes_dict = {node.id: node for node in top_nodes}
         
         previous_len = 0
         new_len = len(top_nodes_dict)
@@ -203,4 +201,4 @@ class HNSW:
             # add random nodes
             top_nodes_ids.extend([random.randint(0, self.layer_sizes[0] - 1) for _ in range(top_k - new_len)])
             
-        return top_nodes_ids
+        return top_nodes_ids"""

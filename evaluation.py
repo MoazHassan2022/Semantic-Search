@@ -61,9 +61,12 @@ if __name__ == "__main__":
     records_np = np.random.random((1000, 70))
     records_dict = [{"id": i, "embed": list(row)} for i, row in enumerate(records_np)]
     _len = len(records_np)
+    tic = time.time()
     db.insert_records(records_dict)
-    print("Index craeted!")
-    res = run_queries(db, records_np, 7, 10)
+    toc = time.time()
+    run_time = toc - tic
+    print("Index craeted! Time: %s sec" % run_time)
+    res = run_queries(db, records_np, top_k=6, num_runs=5)
     print(eval(res))
     
     # TEST
