@@ -3,7 +3,7 @@ from worst_case_implementation import VecDBWorst
 import time
 from dataclasses import dataclass
 from typing import List
-from hnsw import HNSW
+from pq import PQ
 
 AVG_OVERX_ROWS = 10
 
@@ -57,16 +57,15 @@ def eval(results: List[Result]):
 
 if __name__ == "__main__":
     # db = VecDBWorst()
-    db = HNSW(M=50, num_layers=4)
+    db = PQ()
     records_np = np.random.random((1000, 70))
     records_dict = [{"id": i, "embed": list(row)} for i, row in enumerate(records_np)]
     _len = len(records_np)
     tic = time.time()
     db.insert_records(records_dict)
     toc = time.time()
-    run_time = toc - tic
-    print("Index craeted! Time: %s sec" % run_time)
-    res = run_queries(db, records_np, top_k=7, num_runs=5)
+    print(f'Index craeted! time = {toc-tic}')
+    res = run_queries(db, records_np, top_k=7, num_runs=10)
     print(eval(res))
     
     # TEST

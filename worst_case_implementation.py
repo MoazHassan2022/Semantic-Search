@@ -41,4 +41,3 @@ class VecDBWorst:
     def _build_index(self):
         pass
 
-
