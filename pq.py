@@ -6,7 +6,7 @@ from sklearn.cluster import KMeans
 
 class PQ:
 
-    def __init__(self, records_per_file: int = 1000, num_subvectors = 14, num_centroids = 256) -> None:
+    def __init__(self, records_per_file: int = 1000, num_subvectors = 14, num_centroids = 2048) -> None:
         self.records_per_file = records_per_file
         self.num_subvectors = num_subvectors
         self.num_centroids = num_centroids
@@ -82,12 +82,11 @@ class PQ:
         
         # Read all records from the files
         # For loop over the files and get the top_k records from each file
-        records = np.zeros((self.data_size, self.num_subvectors), dtype=np.uint16)
+        records = np.empty((self.data_size, self.num_subvectors), dtype=np.uint16)
         records_counter = 0
         for i in range(self.data_size // self.records_per_file):
             with open(f'data/data_{i}', "r") as fin:
                 lines = fin.readlines()
-                records = []
                 for line in lines:
                     splitted_line = line.split(",") # id, pq_code
                     id, pq_code = int(splitted_line[0]), splitted_line[1:]
@@ -99,7 +98,6 @@ class PQ:
         # We need to find the distances between the query vector and each of the records in the database, based on ids of centroids in each record
         query_records_distances = np.zeros((self.data_size))
         for i in range(self.num_subvectors):
-            print(records[0][i])
             query_records_distances += query_centroids_distances[i, records[:, i]]
             
         # Argsort the records based on the distances between the query vector and each of the records in the database
