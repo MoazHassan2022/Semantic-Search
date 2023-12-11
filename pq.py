@@ -35,6 +35,7 @@ class PQ:
         self.codebooks = codebooks
         self.data_size = len(rows)
 
+        # TODO: write to only 1 file
         # Insert records to the file such that each file has self.records_per_file row of records and name the file as data_0, data_1, etc.
         for i in range(len(rows) // self.records_per_file):
             with open(f'data/data_{i}', "w") as fout:
