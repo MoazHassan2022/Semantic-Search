@@ -9,27 +9,29 @@ class PQ:
         self.num_subvectors = num_subvectors
         self.num_centroids_dict = {
             1000:256,
-            10000:1800,
-            100000:4096,
-            1000000:16384,
-            2000000: 32768,
-            5000000:65536,
-            10000000:131072,
-            20000000:262144
+            10000:1024,
+            100000:1024,
+            1000000:1024,
+            2000000:1024,
+            5000000:1024,
+            10000000:1024,
+            20000000:1024
         }
 
     def insert_records(self, rows: List[Dict[int, Annotated[List[float], 70]]]):
         self.num_centroids = self.num_centroids_dict[len(rows)]
+        # TODO: train only on 1 million
         # Perform Product Quantization encoding for each subvector
         codebooks = []
         kmeans_models = []
         subvector_size = 70 // self.num_subvectors
         for i in range(self.num_subvectors):
             subvectors = np.array([row["embed"][i * subvector_size : (i + 1) * subvector_size] for row in rows])
-            kmeans = KMeans(n_clusters=self.num_centroids, n_init=10)
+            kmeans = KMeans(n_clusters=self.num_centroids, n_init=10, max_iter=10, init='random')
             kmeans.fit(subvectors)
             codebooks.append(kmeans.cluster_centers_)
             kmeans_models.append(kmeans)
+            print(f"Finished training estimator {i}")
         self.codebooks = codebooks
         self.data_size = len(rows)
 

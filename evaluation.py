@@ -58,7 +58,7 @@ def eval(results: List[Result]):
 if __name__ == "__main__":
     # db = VecDBWorst()
     db = PQ()
-    records_np = np.random.random((1000, 70))
+    records_np = np.random.random((1000000, 70))
     records_dict = [{"id": i, "embed": list(row)} for i, row in enumerate(records_np)]
     _len = len(records_np)
     tic = time.time()
