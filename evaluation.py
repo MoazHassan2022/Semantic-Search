@@ -1,9 +1,9 @@
 import numpy as np
-from worst_case_implementation import VecDBWorst
 import time
 from dataclasses import dataclass
+from memory_profiler import memory_usage
 from typing import List
-from pq import PQ
+from vec_db import VecDB
 
 AVG_OVERX_ROWS = 10
 
@@ -20,6 +20,9 @@ def run_queries(db, np_rows, top_k, num_runs):
         query = np.random.random((1,70))
         
         tic = time.time()
+        # mem_before = max(memory_usage())
+        # mem = memory_usage(proc=(db.retrive, (query,top_k), {}), interval = 1e-3)
+        # print("Memory used: %s MB" % (max(mem) - mem_before))
         db_ids = db.retrive(query,top_k)
         toc = time.time()
         run_time = toc - tic
@@ -56,16 +59,21 @@ def eval(results: List[Result]):
 
 
 if __name__ == "__main__":
-    # db = VecDBWorst()
-    db = PQ()
-    records_np = np.random.random((1000000, 70))
+    # without insertion
+    """db = VecDB(new_db=False, file_path='1000000')
+    res = run_queries(db, [], top_k=5, num_runs=1)
+    print(eval(res))"""
+    
+    # with insertion
+    
+    db = VecDB()
+    records_np = np.random.random((1000, 70))
     records_dict = [{"id": i, "embed": list(row)} for i, row in enumerate(records_np)]
-    _len = len(records_np)
     tic = time.time()
     db.insert_records(records_dict)
     toc = time.time()
     print(f'Index craeted! time = {toc-tic}')
-    res = run_queries(db, records_np, top_k=7, num_runs=10)
+    res = run_queries(db, records_np, top_k=5, num_runs=5)
     print(eval(res))
     
     # TEST
