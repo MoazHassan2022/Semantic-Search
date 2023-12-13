@@ -35,8 +35,13 @@ class VecDB:
                 codebooks.append(np.loadtxt(fin, delimiter=",", dtype=np.float32, skiprows=i * self.num_centroids, max_rows=self.num_centroids))
         self.codebooks = codebooks
     
-    def insert_records(self, rows: List[Dict[int, Annotated[List[float], 70]]]):
-        rows = np.array([row["embed"] for row in rows])
+    def insert_records(self, rows):
+        if isinstance(rows, np.ndarray) and rows.shape[1] == 70:
+          convert_rows = False
+        else:
+          convert_rows = True
+        if convert_rows:
+          rows = np.array([row["embed"] for row in rows])
         
         self.data_size = len(rows)
         
