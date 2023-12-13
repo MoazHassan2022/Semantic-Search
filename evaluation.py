@@ -67,21 +67,21 @@ if __name__ == "__main__":
     
     # with insertion
     
-    db = VecDB(file_path='10000',new_db=False)
-    with open('saved_db10000', "r") as fin:
-        records_np = np.loadtxt(fin, delimiter=",", dtype=np.float32)
-    res = run_queries(db, records_np, top_k=5, num_runs=5)
-    print(eval(res))
-    
-    # db = VecDB()
-    # records_np = np.random.random((10000, 70))
-    # records_dict = [{"id": i, "embed": list(row)} for i, row in enumerate(records_np)]
-    # tic = time.time()
-    # db.insert_records(records_dict)
-    # toc = time.time()
-    # print(f'Index craeted! time = {toc-tic}')
-    # res = run_queries(db, records_np, top_k=5, num_runs=50)
+    # db = VecDB(file_path='10000',new_db=False)
+    # with open('saved_db10000', "r") as fin:
+    #     records_np = np.loadtxt(fin, delimiter=",", dtype=np.float32)
+    # res = run_queries(db, records_np, top_k=5, num_runs=5)
     # print(eval(res))
+    
+    db = VecDB()
+    records_np = np.random.random((1000, 70))
+    records_dict = [{"id": i, "embed": list(row)} for i, row in enumerate(records_np)]
+    tic = time.time()
+    db.insert_records(records_dict)
+    toc = time.time()
+    print(f'Index craeted! time = {toc-tic}')
+    res = run_queries(db, records_np, top_k=5, num_runs=1)
+    print(eval(res))
     
     # TEST
     """print(records_np[5])

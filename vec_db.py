@@ -8,10 +8,10 @@ class VecDB:
     def __init__(self, num_subvectors = 14, file_path = None, new_db = True) -> None:
         self.num_subvectors = num_subvectors
         if file_path != None:
-            self.file_path = 'saved_db' + file_path
+            self.file_path = 'data' + file_path
             self.data_size = int(file_path)
         else:
-            self.file_path = 'saved_db'
+            self.file_path = 'data'
         # Initialize the inverted index
         self.inverted_index = defaultdict(list)
         if new_db == False:
@@ -69,9 +69,12 @@ class VecDB:
         
         self.select_parameters()
         
-        # save the data in file 
-        with open(self.file_path, "w") as fout:
-            np.savetxt(fout, rows, delimiter=",", fmt="%f")
+        self.file_path += str(self.data_size)
+        
+        # save the data in files each file has records_per_read records
+        for i in range(0, self.data_size, self.records_per_read):
+            with open(f'{self.file_path}/{i}', "w") as fout:
+                np.savetxt(fout, rows[i:i+self.records_per_read], delimiter=",")
         
         # Train only on 1 million, if data is more than 1 million, else, train on all data
         training_data = None
@@ -93,7 +96,7 @@ class VecDB:
         # Save the codebooks to the codebooks file
         with open(f'codebooks', "w") as fout:
             for i in range(self.num_subvectors):
-                np.savetxt(fout, codebooks[i], delimiter=",", fmt="%.8f")
+                np.savetxt(fout, codebooks[i], delimiter=",")
 
         pq_codes = np.zeros((self.data_size, self.num_subvectors), dtype=np.uint16)
         for i in range(self.num_subvectors):
@@ -130,10 +133,12 @@ class VecDB:
                 potential_records.update(self.inverted_index[(k, index)])
         
         records = np.zeros((len(potential_records), 71),dtype=np.float32)
+        
         # Read only the potential records from the files
         for i,record_id in enumerate(potential_records):
             # read the line and append it to records list with linecache module
-            record = getline(self.file_path, record_id + 1).split(',')
+            file_num = record_id // self.records_per_read
+            record = getline(f'{self.file_path}/{file_num}', record_id + 1).split(',')
             records[i] = np.array([record_id] + [np.float32(i) for i in record])
         # sort the records based on cosine similarity between each record and query vector 
         records = sorted(records, key=lambda x: self.calculate_similarity(x[1:], query), reverse=True)
