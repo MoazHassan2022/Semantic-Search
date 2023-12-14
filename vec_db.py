@@ -121,15 +121,8 @@ class VecDB:
                 print(f"Finished predicting subvector {i}")
                 
         self.inverted_index_path = 'inverted_index'
-                    
-        self.is_index_loaded = False
                 
-    def retrive(self, query: Annotated[List[float], 70], top_k = 1):
-        if self.is_index_loaded == False:
-            self.load_index()
-        else:
-            self.is_index_loaded = True
-            
+    def retrive(self, query: Annotated[List[float], 70], top_k = 1):    
         query = query[0]
         subvector_size = 70 // self.num_subvectors
         
@@ -146,7 +139,12 @@ class VecDB:
         for k in range(self.num_subvectors):
             indexes = np.argsort(query_centroids_distances[k])[:self.clusters_uncertainty]
             for index in indexes:
-                potential_records.update(self.inverted_index[k, index])
+                # Get the records ids from the inverted index file, using the index of the centroid, and the subvector number
+                idsLine = getline(self.inverted_index_path, (k * self.num_centroids) + index + 1)[:-1]
+                if idsLine == '':
+                    continue
+                ids = [np.uint16(id) for id in idsLine.split(',')]
+                potential_records.update(ids)
         
         records = np.zeros((len(potential_records), 71),dtype=np.float32)
         
