@@ -20,6 +20,10 @@ def run_queries(db, np_rows, top_k, num_runs):
         query = np.random.random((1,70))
         
         tic = time.time()
+        actual_ids = np.argsort(np_rows.dot(query.T).T / (np.linalg.norm(np_rows, axis=1) * np.linalg.norm(query)), axis= 1).squeeze().tolist()[::-1]
+        toc = time.time()
+        
+        tic = time.time()
         # mem_before = max(memory_usage())
         # mem = memory_usage(proc=(db.retrive, (query,top_k), {}), interval = 1e-3)
         # print("Memory used: %s MB" % (max(mem) - mem_before))
@@ -27,9 +31,6 @@ def run_queries(db, np_rows, top_k, num_runs):
         toc = time.time()
         run_time = toc - tic
         
-        tic = time.time()
-        actual_ids = np.argsort(np_rows.dot(query.T).T / (np.linalg.norm(np_rows, axis=1) * np.linalg.norm(query)), axis= 1).squeeze().tolist()[::-1]
-        toc = time.time()
         np_run_time = toc - tic
         
         results.append(Result(run_time, top_k, db_ids, actual_ids))
@@ -66,14 +67,20 @@ if __name__ == "__main__":
     
     # with insertion
     
+    # db = VecDB(file_path='10000',new_db=False)
+    # with open('saved_db10000', "r") as fin:
+    #     records_np = np.loadtxt(fin, delimiter=",", dtype=np.float32)
+    # res = run_queries(db, records_np, top_k=5, num_runs=5)
+    # print(eval(res))
+    
     db = VecDB()
-    records_np = np.random.random((1000, 70))
+    records_np = np.random.random((10000, 70))
     records_dict = [{"id": i, "embed": list(row)} for i, row in enumerate(records_np)]
     tic = time.time()
     db.insert_records(records_dict)
     toc = time.time()
     print(f'Index craeted! time = {toc-tic}')
-    res = run_queries(db, records_np, top_k=5, num_runs=5)
+    res = run_queries(db, records_np, top_k=5, num_runs=50)
     print(eval(res))
     
     # TEST
