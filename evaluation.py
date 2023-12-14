@@ -80,7 +80,7 @@ if __name__ == "__main__":
     db.insert_records(records_dict)
     toc = time.time()
     print(f'Index craeted! time = {toc-tic}')
-    res = run_queries(db, records_np, top_k=5, num_runs=50)
+    res = run_queries(db, records_np, top_k=5, num_runs=10)
     print(eval(res))
     
     # TEST
