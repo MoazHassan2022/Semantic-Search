@@ -38,6 +38,8 @@ class VecDB:
         self.records_per_read = 1000
         
         self.clusters_uncertainty = 15
+        
+        self.kmeans_iterations = 3
             
     def load_codebooks(self):
         self.select_parameters()
@@ -88,7 +90,7 @@ class VecDB:
         kmeans_models = []
         subvector_size = 70 // self.num_subvectors
         for i in range(self.num_subvectors):
-            kmeans = KMeans(n_clusters=self.num_centroids, n_init=10, max_iter=10, init='random')
+            kmeans = KMeans(n_clusters=self.num_centroids, n_init=10, max_iter=self.kmeans_iterations, init='random')
             kmeans.fit(training_data[:, i * subvector_size : (i + 1) * subvector_size])
             codebooks.append(kmeans.cluster_centers_)
             kmeans_models.append(kmeans)
@@ -99,17 +101,17 @@ class VecDB:
             for i in range(self.num_subvectors):
                 np.savetxt(fout, codebooks[i], delimiter=",")
 
-        pq_codes = np.zeros((self.data_size, self.num_subvectors), dtype=np.uint16)
-        for i in range(self.num_subvectors):
-            # Predict the centroid of each subvector for each record
-            pq_codes[:, i] = kmeans_models[i].predict(rows[:, i * subvector_size : (i + 1) * subvector_size])
-            print(f"Finished predicting subvector {i}")
+        pq_codes = np.zeros((self.data_size), dtype=np.uint16)
             
         # Update the inverted index during insertion
         for i in range(self.num_subvectors):
+            # Predict the centroid of each subvector for each record
+            pq_codes = kmeans_models[i].predict(rows[:, i * subvector_size : (i + 1) * subvector_size])
             for j in range(self.num_centroids):
-                records_with_centroid_j = np.where(pq_codes[:, i] == j)[0]
+                records_with_centroid_j = np.where(pq_codes == j)[0]
                 self.inverted_index[(i, j)].extend(records_with_centroid_j.tolist())
+            print(f"Finished predicting subvector {i}")
+        
         # Save the inverted index to the inverted index file
         with open(f'inverted_index', "w") as fout:
             for key in self.inverted_index:
