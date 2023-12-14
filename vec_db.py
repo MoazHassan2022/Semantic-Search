@@ -3,6 +3,7 @@ from typing import Dict, List, Annotated
 from sklearn.cluster import KMeans
 from collections import defaultdict
 from linecache import getline
+import os
 class VecDB:
 
     def __init__(self, num_subvectors = 14, file_path = None, new_db = True) -> None:
@@ -34,10 +35,9 @@ class VecDB:
         else:
             self.num_centroids = 1024
             
-        if self.data_size <= 10000:
-            self.records_per_read = 1000
-        else:
-            self.records_per_read = 10000
+        self.records_per_read = 1000
+        
+        self.clusters_uncertainty = 15
             
     def load_codebooks(self):
         self.select_parameters()
@@ -68,7 +68,11 @@ class VecDB:
         self.data_size = len(rows)
         
         self.select_parameters()
-        # save the data in files each file has records_per_read records
+        # Ensure that self.file_path directory exists
+        if not os.path.exists(self.file_path):
+            os.makedirs(self.file_path)
+            
+        # Save the data in files each file has records_per_read records
         for i in range(0, self.data_size, self.records_per_read):
             with open(f'{self.file_path}/{i}', "w") as fout:
                 np.savetxt(fout, rows[i:i+self.records_per_read], delimiter=",", fmt='%.8f')
@@ -99,6 +103,7 @@ class VecDB:
         for i in range(self.num_subvectors):
             # Predict the centroid of each subvector for each record
             pq_codes[:, i] = kmeans_models[i].predict(rows[:, i * subvector_size : (i + 1) * subvector_size])
+            print(f"Finished predicting subvector {i}")
             
         # Update the inverted index during insertion
         for i in range(self.num_subvectors):
@@ -125,7 +130,7 @@ class VecDB:
         # Use the inverted index to filter potential records
         potential_records = set()
         for k in range(self.num_subvectors):
-            indexes = np.argsort(query_centroids_distances[k])[:15]
+            indexes = np.argsort(query_centroids_distances[k])[:self.clusters_uncertainty]
             for index in indexes:
                 potential_records.update(self.inverted_index[(k, index)])
         
