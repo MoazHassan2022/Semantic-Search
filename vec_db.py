@@ -13,8 +13,6 @@ class VecDB:
             self.data_size = int(file_path)
         else:
             self.file_path = 'data'
-        # Initialize the inverted index
-        self.inverted_index = defaultdict(list)
         if new_db == False:
             # Load the self.codebooks from the codebooks file
             self.codebooks_file_path = 'codebooks' + file_path # file_path maybe 1000000
@@ -50,7 +48,10 @@ class VecDB:
         self.codebooks = codebooks
 
     def load_index(self):
-        self.inverted_index = defaultdict(list)
+        self.inverted_index = np.empty((self.num_subvectors, self.num_centroids), dtype=set)
+        for i in range(self.num_subvectors):
+            for j in range(self.num_centroids):
+                self.inverted_index[i, j] = set()
         sub_space,centroid_id = 0,0
         with open(self.inverted_index_path, "r") as fin:
             for line in fin:
@@ -70,6 +71,11 @@ class VecDB:
         self.data_size = len(rows)
         
         self.select_parameters()
+        self.inverted_index = np.empty((self.num_subvectors, self.num_centroids), dtype=set)
+        for i in range(self.num_subvectors):
+            for j in range(self.num_centroids):
+                self.inverted_index[i, j] = set()
+                
         # Ensure that self.file_path directory exists
         if not os.path.exists(self.file_path):
             os.makedirs(self.file_path)
@@ -109,13 +115,15 @@ class VecDB:
             pq_codes = kmeans_models[i].predict(rows[:, i * subvector_size : (i + 1) * subvector_size])
             for j in range(self.num_centroids):
                 records_with_centroid_j = np.where(pq_codes == j)[0]
-                self.inverted_index[(i, j)].extend(records_with_centroid_j.tolist())
+                self.inverted_index[i, j].update(records_with_centroid_j)
+                
             print(f"Finished predicting subvector {i}")
         
         # Save the inverted index to the inverted index file
         with open(f'inverted_index', "w") as fout:
-            for key in self.inverted_index:
-                fout.write(','.join([str(id) for id in self.inverted_index[key]])+"\n")
+            for i in range(self.num_subvectors):
+                for j in range(self.num_centroids):
+                    fout.write(','.join([str(id) for id in self.inverted_index[i, j]])+"\n")
                 
     def retrive(self, query: Annotated[List[float], 70], top_k = 1):
         query = query[0]
@@ -134,7 +142,7 @@ class VecDB:
         for k in range(self.num_subvectors):
             indexes = np.argsort(query_centroids_distances[k])[:self.clusters_uncertainty]
             for index in indexes:
-                potential_records.update(self.inverted_index[(k, index)])
+                potential_records.update(self.inverted_index[k, index])
         
         records = np.zeros((len(potential_records), 71),dtype=np.float32)
         
