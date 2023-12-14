@@ -46,13 +46,21 @@ class VecDB:
         self.codebooks = codebooks
 
     def load_index(self):
-        self.inverted_index = np.empty((self.num_subvectors, self.num_centroids), dtype=set)
+        self.inverted_index = np.empty((self.num_subvectors, self.num_centroids), dtype=list)
         for i in range(self.num_subvectors):
             for j in range(self.num_centroids):
-                self.inverted_index[i, j] = set()
+                self.inverted_index[i, j] = []
         sub_space,centroid_id = 0,0
         with open(self.inverted_index_path, "r") as fin:
             for line in fin:
+                # Remove the \n from the end of the line
+                line = line[:-1]
+                if line == '':
+                    centroid_id += 1
+                    if(centroid_id == self.num_centroids):
+                        sub_space += 1
+                        centroid_id = 0
+                    continue
                 self.inverted_index[(sub_space,centroid_id)] = [np.uint16(i) for i in line.split(',')]
                 centroid_id += 1
                 if(centroid_id == self.num_centroids):
@@ -69,10 +77,6 @@ class VecDB:
         self.data_size = len(rows)
         
         self.select_parameters()
-        self.inverted_index = np.empty((self.num_subvectors, self.num_centroids), dtype=set)
-        for i in range(self.num_subvectors):
-            for j in range(self.num_centroids):
-                self.inverted_index[i, j] = set()
                 
         # Ensure that self.file_path directory exists
         if not os.path.exists(self.file_path):
@@ -103,24 +107,29 @@ class VecDB:
             np.savetxt(fout, self.codebooks, delimiter=",")
 
         pq_codes = np.zeros((self.data_size), dtype=np.uint16)
-            
-        # Update the inverted index during insertion
-        for i in range(self.num_subvectors):
-            # Predict the centroid of each subvector for each record
-            pq_codes = self.kmeans_model.predict(rows[:, i * subvector_size : (i + 1) * subvector_size])
-            for j in range(self.num_centroids):
-                records_with_centroid_j = np.where(pq_codes == j)[0]
-                self.inverted_index[i, j].update(records_with_centroid_j)
-                
-            print(f"Finished predicting subvector {i}")
-        
+           
         # Save the inverted index to the inverted index file
-        with open(f'inverted_index', "w") as fout:
+        with open(f'inverted_index', "w") as fout: 
+            # Update the inverted index during insertion
             for i in range(self.num_subvectors):
+                # Predict the centroid of each subvector for each record
+                pq_codes = self.kmeans_model.predict(rows[:, i * subvector_size : (i + 1) * subvector_size])
                 for j in range(self.num_centroids):
-                    fout.write(','.join([str(id) for id in self.inverted_index[i, j]])+"\n")
+                    records_with_centroid_j = np.where(pq_codes == j)[0]
+                    fout.write(','.join([str(id) for id in records_with_centroid_j])+"\n")
+                
+                print(f"Finished predicting subvector {i}")
+                
+        self.inverted_index_path = 'inverted_index'
+                    
+        self.is_index_loaded = False
                 
     def retrive(self, query: Annotated[List[float], 70], top_k = 1):
+        if self.is_index_loaded == False:
+            self.load_index()
+        else:
+            self.is_index_loaded = True
+            
         query = query[0]
         subvector_size = 70 // self.num_subvectors
         
