@@ -34,9 +34,9 @@ class VecDB:
             
         self.records_per_read = 1000
         
-        self.clusters_uncertainty = 15
+        self.clusters_uncertainty = 40
         
-        self.kmeans_iterations = 3
+        self.kmeans_iterations = 10
             
     def load_codebooks(self):
         self.select_parameters()
@@ -77,7 +77,7 @@ class VecDB:
         kmeans_models = []
         subvector_size = 70 // self.num_subvectors
         for i in range(self.num_subvectors):
-            kmeans = KMeans(n_clusters=self.num_centroids, n_init=10, max_iter=10, init='random')
+            kmeans = KMeans(n_clusters=self.num_centroids, n_init=10, max_iter=self.kmeans_iterations, init='random')
             kmeans.fit(training_data[:, i * subvector_size : (i + 1) * subvector_size])
             codebooks.append(kmeans.cluster_centers_)
             kmeans_models.append(kmeans)

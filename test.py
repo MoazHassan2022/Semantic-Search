@@ -1,11 +1,6 @@
 import numpy as np
 
-inverted_index = np.empty((14, 1024), dtype=set)
+rng = np.random.default_rng(50)
+vectors = rng.random((1, 7), dtype=np.float32)
 
-for i in range(14):
-    for j in range(1024):
-        inverted_index[i, j] = set()
-        
-inverted_index[0, 0].add(1)
-
-print(inverted_index[2, 514])
+print(vectors)
