@@ -34,7 +34,7 @@ class VecDB:
             
         self.records_per_read = 1000
         
-        self.clusters_uncertainty = 40
+        self.clusters_uncertainty = 60
         
         self.kmeans_iterations = 10
             
