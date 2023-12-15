@@ -74,7 +74,7 @@ if __name__ == "__main__":
     # print(eval(res))
     
     db = VecDB()
-    records_np = np.random.random((1000000, 70))
+    records_np = np.random.random((10000, 70))
     records_dict = [{"id": i, "embed": list(row)} for i, row in enumerate(records_np)]
     tic = time.time()
     db.insert_records(records_dict)

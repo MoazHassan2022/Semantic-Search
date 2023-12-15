@@ -18,7 +18,6 @@ class VecDB:
             self.codebooks_file_path = 'codebooks' + file_path # file_path maybe 1000000
             self.inverted_index_path = 'inverted_index' + file_path
             self.load_codebooks()
-            self.load_index()
     
     def calculate_similarity(self, node1, node2) -> float:
         dot_product = np.dot(node1, node2)
@@ -41,31 +40,11 @@ class VecDB:
             
     def load_codebooks(self):
         self.select_parameters()
-        with open(self.codebooks_file_path, "r") as fin:
-            codebooks = np.loadtxt(fin, delimiter=",", dtype=np.float32, max_rows=self.num_centroids)
-        self.codebooks = codebooks
-
-    def load_index(self):
-        self.inverted_index = np.empty((self.num_subvectors, self.num_centroids), dtype=list)
+        codebooks = []
         for i in range(self.num_subvectors):
-            for j in range(self.num_centroids):
-                self.inverted_index[i, j] = []
-        sub_space,centroid_id = 0,0
-        with open(self.inverted_index_path, "r") as fin:
-            for line in fin:
-                # Remove the \n from the end of the line
-                line = line[:-1]
-                if line == '':
-                    centroid_id += 1
-                    if(centroid_id == self.num_centroids):
-                        sub_space += 1
-                        centroid_id = 0
-                    continue
-                self.inverted_index[(sub_space,centroid_id)] = [np.uint16(i) for i in line.split(',')]
-                centroid_id += 1
-                if(centroid_id == self.num_centroids):
-                    sub_space += 1
-                    centroid_id = 0
+            with open(self.codebooks_file_path, "r") as fin:
+                codebooks.append(np.loadtxt(fin, delimiter=",", dtype=np.float32, skiprows=i * self.num_centroids, max_rows=self.num_centroids))
+        self.codebooks = codebooks
     
     def insert_records(self, rows: List[Dict[int, Annotated[List[float], 70]]]):
         if isinstance(rows, np.ndarray) and rows.shape[1] == 70:
@@ -93,18 +72,23 @@ class VecDB:
             training_data = rows[:1000000]
         else:
             training_data = rows
-        # Perform Product Quantization encoding for first subvector
+        # Perform Product Quantization encoding for each subvector
+        codebooks = []
+        kmeans_models = []
         subvector_size = 70 // self.num_subvectors
-        kmeans = KMeans(n_clusters=self.num_centroids, n_init=10, max_iter=self.kmeans_iterations, init='random')
-        kmeans.fit(training_data[:, 0 : subvector_size])
-        # kmeans.fit(training_data.reshape(-1, subvector_size))
-        self.codebooks = kmeans.cluster_centers_
-        self.kmeans_model = kmeans
-        print(f"Finished training model")
+        for i in range(self.num_subvectors):
+            kmeans = KMeans(n_clusters=self.num_centroids, n_init=10, max_iter=10, init='random')
+            kmeans.fit(training_data[:, i * subvector_size : (i + 1) * subvector_size])
+            codebooks.append(kmeans.cluster_centers_)
+            kmeans_models.append(kmeans)
+            print(f"Finished training model {i}")
+            
+        self.codebooks = codebooks
         
         # Save the codebooks to the codebooks file
         with open(f'codebooks', "w") as fout:
-            np.savetxt(fout, self.codebooks, delimiter=",")
+            for i in range(self.num_subvectors):
+                np.savetxt(fout, codebooks[i], delimiter=",")
 
         pq_codes = np.zeros((self.data_size), dtype=np.uint16)
            
@@ -113,7 +97,7 @@ class VecDB:
             # Update the inverted index during insertion
             for i in range(self.num_subvectors):
                 # Predict the centroid of each subvector for each record
-                pq_codes = self.kmeans_model.predict(rows[:, i * subvector_size : (i + 1) * subvector_size])
+                pq_codes = kmeans_models[i].predict(rows[:, i * subvector_size : (i + 1) * subvector_size])
                 for j in range(self.num_centroids):
                     records_with_centroid_j = np.where(pq_codes == j)[0]
                     fout.write(','.join([str(id) for id in records_with_centroid_j])+"\n")
@@ -132,7 +116,7 @@ class VecDB:
         query_centroids_distances = np.zeros((self.num_subvectors, self.num_centroids))
         # codebooks is num_subvectors * num_centroids * ds, ds = 70 / num_subvectors
         for i in range(self.num_subvectors):
-            query_centroids_distances[i] = np.linalg.norm(self.codebooks - query[i * subvector_size : (i + 1) * subvector_size], axis=1)
+            query_centroids_distances[i] = np.linalg.norm(self.codebooks[i] - query[i * subvector_size : (i + 1) * subvector_size], axis=1)
         
         # Use the inverted index to filter potential records
         potential_records = set()
