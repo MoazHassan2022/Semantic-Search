@@ -74,13 +74,13 @@ if __name__ == "__main__":
     # print(eval(res))
     
     db = VecDB()
-    records_np = np.random.random((10000, 70))
+    records_np = np.random.random((100000, 70))
     records_dict = [{"id": i, "embed": list(row)} for i, row in enumerate(records_np)]
     tic = time.time()
     db.insert_records(records_dict)
     toc = time.time()
     print(f'Index craeted! time = {toc-tic}')
-    res = run_queries(db, records_np, top_k=5, num_runs=10)
+    res = run_queries(db, records_np, top_k=5, num_runs=5)
     print(eval(res))
     
     # TEST

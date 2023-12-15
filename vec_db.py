@@ -30,9 +30,9 @@ class VecDB:
             
         self.records_per_read = 1000
         
-        self.clusters_uncertainty = int(min(np.ceil(np.sqrt(self.num_centroids)) * 3, self.num_centroids // 4))
+        self.clusters_uncertainty = int(self.num_centroids // 4)
         
-        self.kmeans_iterations = 15
+        self.kmeans_iterations = 25
             
     def load_codebooks(self):
         self.select_parameters()
