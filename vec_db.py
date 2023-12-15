@@ -6,8 +6,7 @@ from linecache import getline
 import os
 class VecDB:
 
-    def __init__(self, num_subvectors = 14, file_path = None, new_db = True) -> None:
-        self.num_subvectors = num_subvectors
+    def __init__(self, file_path = None, new_db = True) -> None:
         if file_path != None:
             self.file_path = 'data' + file_path
             self.data_size = int(file_path)
@@ -27,23 +26,19 @@ class VecDB:
         return cosine_similarity
 
     def select_parameters(self):
-        if self.data_size <= 1000:
-            self.num_centroids = 256
-        else:
-            self.num_centroids = 1024
+        self.num_centroids = int(np.ceil(np.sqrt(self.data_size)))
             
         self.records_per_read = 1000
         
-        self.clusters_uncertainty = 15
+        self.clusters_uncertainty = int(min(np.ceil(np.sqrt(self.num_centroids)) * 3, self.num_centroids // 4))
         
-        self.kmeans_iterations = 10
+        self.kmeans_iterations = 15
             
     def load_codebooks(self):
         self.select_parameters()
-        codebooks = []
-        for i in range(self.num_subvectors):
-            with open(self.codebooks_file_path, "r") as fin:
-                codebooks.append(np.loadtxt(fin, delimiter=",", dtype=np.float32, skiprows=i * self.num_centroids, max_rows=self.num_centroids))
+        codebooks = None
+        with open(self.codebooks_file_path, "r") as fin:
+            codebooks = np.loadtxt(fin, delimiter=",", dtype=np.float32, max_rows=self.num_centroids)
         self.codebooks = codebooks
     
     def insert_records(self, rows: List[Dict[int, Annotated[List[float], 70]]]):
@@ -72,63 +67,52 @@ class VecDB:
             training_data = rows[:1000000]
         else:
             training_data = rows
-        # Perform Product Quantization encoding for each subvector
-        codebooks = []
-        kmeans_models = []
-        subvector_size = 70 // self.num_subvectors
-        for i in range(self.num_subvectors):
-            kmeans = KMeans(n_clusters=self.num_centroids, n_init=10, max_iter=self.kmeans_iterations, init='random')
-            kmeans.fit(training_data[:, i * subvector_size : (i + 1) * subvector_size])
-            codebooks.append(kmeans.cluster_centers_)
-            kmeans_models.append(kmeans)
-            print(f"Finished training model {i}")
+            
+        # Train Kmeans on all vectors
+        codebooks = None
+        kmeans_model = KMeans(n_clusters=self.num_centroids, n_init=10, max_iter=self.kmeans_iterations, init='random')
+        kmeans_model.fit(training_data)
+        codebooks = kmeans_model.cluster_centers_
+        print(f"Finished training model")
             
         self.codebooks = codebooks
         
         # Save the codebooks to the codebooks file
         with open(f'codebooks', "w") as fout:
-            for i in range(self.num_subvectors):
-                np.savetxt(fout, codebooks[i], delimiter=",")
+            np.savetxt(fout, codebooks, delimiter=",")
 
         pq_codes = np.zeros((self.data_size), dtype=np.uint16)
            
         # Save the inverted index to the inverted index file
         with open(f'inverted_index', "w") as fout: 
             # Update the inverted index during insertion
-            for i in range(self.num_subvectors):
-                # Predict the centroid of each subvector for each record
-                pq_codes = kmeans_models[i].predict(rows[:, i * subvector_size : (i + 1) * subvector_size])
-                for j in range(self.num_centroids):
-                    records_with_centroid_j = np.where(pq_codes == j)[0]
-                    fout.write(','.join([str(id) for id in records_with_centroid_j])+"\n")
-                
-                print(f"Finished predicting subvector {i}")
+            # Predict the centroid of each subvector for each record
+            pq_codes = kmeans_model.predict(rows)
+            for i in range(self.num_centroids):
+                centroid_records = np.where(pq_codes == i)[0]
+                fout.write(','.join([str(id) for id in centroid_records])+"\n")
+            
+            print(f"Finished predicting all records")
                 
         self.inverted_index_path = 'inverted_index'
                 
     def retrive(self, query: Annotated[List[float], 70], top_k = 1):    
         query = query[0]
-        subvector_size = 70 // self.num_subvectors
         
-        # Encode the query vector using Product Quantization
-        # Caclulate eculidean distance between all the query vector subvectors and each of the centroids of that subvector, and store it in distances matrix
-        # Every element of query_centroids_distances is a vector of size num_centroids, which contains the eculidean distance between the query vector subvector and each of the centroids of that subvector
-        query_centroids_distances = np.zeros((self.num_subvectors, self.num_centroids))
-        # codebooks is num_subvectors * num_centroids * ds, ds = 70 / num_subvectors
-        for i in range(self.num_subvectors):
-            query_centroids_distances[i] = np.linalg.norm(self.codebooks[i] - query[i * subvector_size : (i + 1) * subvector_size], axis=1)
+        # Caclulate eculidean distance between all the query vector and each of the centroids, and store it in distances matrix
+        query_centroids_distances = np.zeros((self.num_centroids))
+        query_centroids_distances = np.linalg.norm(self.codebooks - query, axis=1)
         
         # Use the inverted index to filter potential records
         potential_records = set()
-        for k in range(self.num_subvectors):
-            indexes = np.argsort(query_centroids_distances[k])[:self.clusters_uncertainty]
-            for index in indexes:
-                # Get the records ids from the inverted index file, using the index of the centroid, and the subvector number
-                idsLine = getline(self.inverted_index_path, (k * self.num_centroids) + index + 1)[:-1]
-                if idsLine == '':
-                    continue
-                ids = [np.uint16(id) for id in idsLine.split(',')]
-                potential_records.update(ids)
+        indexes = np.argsort(query_centroids_distances)[:self.clusters_uncertainty]
+        for index in indexes:
+            # Get the records ids from the inverted index file, using the index of the centroid, and the subvector number
+            idsLine = getline(self.inverted_index_path, index + 1)[:-1]
+            if idsLine == '':
+                continue
+            ids = [np.uint16(id) for id in idsLine.split(',')]
+            potential_records.update(ids)
         
         records = np.zeros((len(potential_records), 71),dtype=np.float32)
         
